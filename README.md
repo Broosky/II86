@@ -1,6 +1,6 @@
 # 💡 II86
 
-An in-progress project. Schematic and design phase underway. More details, diagrams, and documentation coming soon.
+An automated event executor that triggers actions based on pre-defined times and configurable profiles.
 
 > If you found this project useful, interesting, or worth keeping an eye on, consider giving it a ⭐️.
 > It helps others discover the project and motivates me to keep building and sharing more.
@@ -9,9 +9,10 @@ An in-progress project. Schematic and design phase underway. More details, diagr
 
 ![Rev 1](<Schematics/Rev 1.png>)
 
-## 🔹 V0.0.0 For Rev 1 Schematic
+## 🔹 V1.0.0 Firmware For Rev 1 Schematic
 
 - Initial release.
+- Non RTC; uses compiled time to configure the clock.
 
 ##
 
