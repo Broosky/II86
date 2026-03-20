@@ -5,7 +5,7 @@
 	(uuid "9e25e860-f065-4810-857f-e93d45f31fd5")
 	(paper "USLetter")
 	(title_block
-		(title "II86")
+		(title "Triggy")
 		(date "2025-04-17")
 		(rev "1")
 		(company "Illusion Interactive")
@@ -2498,7 +2498,7 @@
 			(uuid "3870d4cb-3c4b-43e6-9a1e-53bd17deb367")
 		)
 		(instances
-			(project "II86"
+			(project "Triggy"
 				(path "/9e25e860-f065-4810-857f-e93d45f31fd5"
 					(reference "R2")
 					(unit 1)
@@ -2566,7 +2566,7 @@
 			(uuid "c9c482df-ba3b-4bfe-850e-18039fc89c53")
 		)
 		(instances
-			(project "II86"
+			(project "Triggy"
 				(path "/9e25e860-f065-4810-857f-e93d45f31fd5"
 					(reference "R3")
 					(unit 1)
@@ -2708,7 +2708,7 @@
 			(uuid "2a231b53-5cf4-4427-9a3c-a6425786fc77")
 		)
 		(instances
-			(project "II86"
+			(project "Triggy"
 				(path "/9e25e860-f065-4810-857f-e93d45f31fd5"
 					(reference "#PWR03")
 					(unit 1)
@@ -2922,7 +2922,7 @@
 			(uuid "93b4b9a4-552b-469d-b2ff-6eec45c0880e")
 		)
 		(instances
-			(project "II86"
+			(project "Triggy"
 				(path "/9e25e860-f065-4810-857f-e93d45f31fd5"
 					(reference "R5")
 					(unit 1)
@@ -2992,7 +2992,7 @@
 			(uuid "202e8700-5ff3-4184-9e98-384ddf650c3d")
 		)
 		(instances
-			(project "II86"
+			(project "Triggy"
 				(path "/9e25e860-f065-4810-857f-e93d45f31fd5"
 					(reference "SW2")
 					(unit 1)
@@ -3068,7 +3068,7 @@
 			(uuid "a6054cf6-5f04-491a-b273-e8bd7ffe8ffb")
 		)
 		(instances
-			(project "II86"
+			(project "Triggy"
 				(path "/9e25e860-f065-4810-857f-e93d45f31fd5"
 					(reference "D3")
 					(unit 1)
@@ -3145,7 +3145,7 @@
 			(uuid "44e1a1c6-98f9-4dbd-b4cc-9853a71f5bad")
 		)
 		(instances
-			(project "II86"
+			(project "Triggy"
 				(path "/9e25e860-f065-4810-857f-e93d45f31fd5"
 					(reference "D2")
 					(unit 1)
@@ -3657,7 +3657,7 @@
 			(uuid "fc6e5a83-9f1d-4b5e-8b4b-b8b5da4df930")
 		)
 		(instances
-			(project "II86"
+			(project "Triggy"
 				(path "/9e25e860-f065-4810-857f-e93d45f31fd5"
 					(reference "R4")
 					(unit 1)

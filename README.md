@@ -1,4 +1,4 @@
-# 💡 II86
+# 💡 Triggy
 
 An automated event executor that triggers actions based on pre-defined times and configurable profiles.
 
