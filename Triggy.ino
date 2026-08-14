@@ -16,16 +16,20 @@
 // Fold all: Ctrl + K + 0
 // Unfold all: Ctrl + K + J
 // Show file explorer: Ctrl + Shift + E
+// Auto format: Ctrl + T
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #include "Headers/profiles.h"
+#include "Headers/pwm.h"
+#include "Headers/gamma.h"
 #include <TimeLib.h>
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Program constants.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 const uint8_t FW_VERSION_MAJOR = 1;
-const uint8_t FW_VERSION_MINOR = 0;
+const uint8_t FW_VERSION_MINOR = 1;
 const uint8_t FW_VERSION_PATCH = 0;
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+const uint8_t SERIAL_OUT = true;  // Debug output.
 const uint8_t PIN_OUTPUT_LED_YELLOW = 8;
 const uint8_t PIN_OUTPUT_LED_RED = 7;
 const uint8_t PIN_OUTPUT_TIP41_BASE = 9;  // PWM
@@ -34,21 +38,25 @@ const uint8_t PIN_INPUT_BUTTON = 2;
 const uint8_t TRIGGER_NORMAL_CYCLES = 3;
 const uint8_t TRIGGER_TEST_CYCLES = 1;
 const uint8_t BUTTON_DEBOUNCE_DELAY_MS = 100;
+const uint16_t PWM_DEFAULT_DELAY_US = 900;                         // Microseconds.
 const unsigned long BUTTON_ENTER_CADENCE_MODE_DELAY_SECONDS = 60;  // Must be unsigned long.
 const unsigned long CADENCE_MODE_CYCLIC_INTERVAL_SECONDS = 300;    // Must be unsigned long.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Globals and counters.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-unsigned long debounceLastTimeMs = 0;
-unsigned long cadenceModeLastConsideredTimeMs = 0;
-unsigned long cadenceModeLastTriggerTimeMs = 0;
-uint8_t buttonStateLast = LOW;
-uint8_t (*activeProfile)[CONSIDER_DAYS_COUNT][CONSIDER_TIMES_COUNT][VALUES] = NULL;
+unsigned long ulDebounceLastTimeMs = 0;
+unsigned long ulCadenceModeLastConsideredTimeMs = 0;
+unsigned long ulCadenceModeLastTriggerTimeMs = 0;
+uint8_t ubButtonStateLast = LOW;
+uint8_t (*p_ubActiveProfile)[CONSIDER_DAYS_COUNT][CONSIDER_TIMES_COUNT][VALUES] = NULL;
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Initial setup.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void setup(void) {
-  Serial.begin(9600);
+  ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // Hard delay in case of DC power chatter or rapid connect/disconnect of power.
+  ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  delay(3000);
   ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   pinMode(PIN_INPUT_BUTTON, INPUT);
   pinMode(PIN_OUTPUT_TIP41_BASE, OUTPUT);
@@ -59,12 +67,20 @@ void setup(void) {
   setupPrintTime();
   setupSeed();
   ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  if (SERIAL_OUT) {
+    Serial.begin(9600);
+    delayInternalSeconds(1, NULL);
+    Serial.println("=================");
+    Serial.println("== New Session ==");
+    Serial.println("=================");
+  }
+  ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   // Test all the things.
   ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   ///*
-  blinkYellowLed(8, 250);
-  blinkRedLed(8, 250);
-  blinkAllLeds(8, 250);
+  pulseYellowLed(8, 250, PWM_DEFAULT_DELAY_US);
+  pulseRedLed(8, 250, PWM_DEFAULT_DELAY_US);
+  pulseAllLeds(8, 250, PWM_DEFAULT_DELAY_US);
   triggerEvent(TRIGGER_TEST_CYCLES);
   //*/
 }
@@ -75,7 +91,7 @@ void loop(void) {
   if (considerTestMode()) {
     setupCadenceMode();
     if (considerCadenceMode()) {
-      blinkRedLed(1, 250);
+      pulseRedLed(1, 250, PWM_DEFAULT_DELAY_US);
       if (considerCadenceModeTrigger()) {
         triggerEvent(TRIGGER_TEST_CYCLES);
       }
@@ -87,27 +103,27 @@ void loop(void) {
     resetCadenceMode();
     runProgram();
   }
-  delay(1000);
+  delayInternalSeconds(1, NULL);
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // The main program. Consider triggering the event if the current day and time intersects with the expected day's times with up to a minute of accuracy.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void runProgram(void) {
-  static int lastWeekday = 0, profile = 0;
+  static int nLastWeekday = 0, nProfile = 0;
 
-  int nowWeekday = weekday();
-  int nowHour = hour();
-  int nowMinute = minute();
+  int nNowWeekday = weekday();
+  int nNowHour = hour();
+  int nNowMinute = minute();
 
-  if (nowWeekday != lastWeekday) {
-    lastWeekday = nowWeekday;
-    profile = getProfile();
+  if (nNowWeekday != nLastWeekday) {
+    nLastWeekday = nNowWeekday;
+    nProfile = getProfile();
   }
 
-  blinkYellowLed(profile + 1, 100);
-  activeProfile = &profiles[profile];
+  pulseYellowLed(nProfile + 1, 100, PWM_DEFAULT_DELAY_US);
+  p_ubActiveProfile = &profiles[nProfile];
 
-  switch (nowWeekday) {
+  switch (nNowWeekday) {
     // Sunday
     case 1:
     case 2:
@@ -117,8 +133,11 @@ void runProgram(void) {
     case 6:
     case 7:
       {
-        for (uint8_t i = 0; i < CONSIDER_TIMES_COUNT; i++) {
-          if (considerTriggerEvent(nowHour, activeProfile[nowWeekday - 1][i][0], nowMinute, activeProfile[nowWeekday - 1][i][1])) {
+        for (uint8_t ubI = 0; ubI < CONSIDER_TIMES_COUNT; ubI++) {
+          uint8_t nConsiderHour = p_ubActiveProfile[nNowWeekday - 1][ubI][0];
+          uint8_t nConsiderMinute = p_ubActiveProfile[nNowWeekday - 1][ubI][1];
+          ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+          if (considerTriggerEvent(nNowHour, nConsiderHour, nNowMinute, nConsiderMinute)) {
             triggerEvent(TRIGGER_NORMAL_CYCLES);
           }
         }
@@ -137,172 +156,191 @@ uint8_t getProfile(void) {
   return random(CONSIDER_PROFILES_COUNT);
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Blinks the red LED.
+// Pulses the red LED.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-void blinkRedLed(uint8_t times, uint16_t delayMs) {
-  for (uint8_t i = 0; i < times; i++) {
-    digitalWrite(PIN_OUTPUT_LED_RED, HIGH);
-    delay(delayMs);
-    digitalWrite(PIN_OUTPUT_LED_RED, LOW);
-    if (times > 1 && i + 1 < times) {
-      delay(delayMs);
+void pulseRedLed(uint8_t ubTimes, uint16_t usDelayMs, uint16_t usPwmDelayUs) {
+  for (uint8_t ubI = 0; ubI < ubTimes; ubI++) {
+    pulsePin(PIN_OUTPUT_LED_RED, usPwmDelayUs);
+    if (ubTimes > 1 && ubI + 1 < ubTimes) {
+      delayInternalMilliseconds(usDelayMs, NULL);
     }
   }
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Blinks the yellow LED.
+// Pulses the yellow LED.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-void blinkYellowLed(uint8_t times, uint16_t delayMs) {
-  for (uint8_t i = 0; i < times; i++) {
-    digitalWrite(PIN_OUTPUT_LED_YELLOW, HIGH);
-    delay(delayMs);
-    digitalWrite(PIN_OUTPUT_LED_YELLOW, LOW);
-    if (times > 1 && i + 1 < times) {
-      delay(delayMs);
+void pulseYellowLed(uint8_t ubTimes, uint16_t usDelayMs, uint16_t usPwmDelayUs) {
+  for (uint8_t ubI = 0; ubI < ubTimes; ubI++) {
+    pulsePin(PIN_OUTPUT_LED_YELLOW, usPwmDelayUs);
+    if (ubTimes > 1 && ubI + 1 < ubTimes) {
+      delayInternalMilliseconds(usDelayMs, NULL);
     }
   }
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Blinks all LED's.
+// Pulses all LED's.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-void blinkAllLeds(uint8_t times, uint16_t delayMs) {
-  for (uint8_t i = 0; i < times; i++) {
-    digitalWrite(PIN_OUTPUT_LED_RED, HIGH);
-    digitalWrite(PIN_OUTPUT_LED_YELLOW, HIGH);
-    delay(delayMs);
-    digitalWrite(PIN_OUTPUT_LED_RED, LOW);
-    digitalWrite(PIN_OUTPUT_LED_YELLOW, LOW);
-    if (times > 1 && i + 1 < times) {
-      delay(delayMs);
+void pulseAllLeds(uint8_t ubTimes, uint16_t usDelayMs, uint16_t usPwmDelayUs) {
+  uint8_t ubJ = 0;
+  ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  for (uint8_t ubI = 0; ubI < ubTimes; ubI++) {
+    for (; ubJ < GAMMA_CONDENSED_MAX_VALUES; ubJ++) {
+      softwarePwmAnalogWrite(PIN_OUTPUT_LED_RED, gammaCorrectedCondensed(ubJ));
+      softwarePwmAnalogWrite(PIN_OUTPUT_LED_YELLOW, gammaCorrectedCondensed(ubJ));
+      delayInternalMicroseconds(usPwmDelayUs, NULL);
     }
+    for (ubJ = GAMMA_CONDENSED_MAX_VALUES - 1; ubJ > 0; ubJ--) {
+      softwarePwmAnalogWrite(PIN_OUTPUT_LED_RED, gammaCorrectedCondensed(ubJ));
+      softwarePwmAnalogWrite(PIN_OUTPUT_LED_YELLOW, gammaCorrectedCondensed(ubJ));
+      delayInternalMicroseconds(usPwmDelayUs, NULL);
+    }
+    if (ubTimes > 1 && ubI + 1 < ubTimes) {
+      delayInternalMilliseconds(usDelayMs, NULL);
+    }
+  }
+}
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void pulsePin(uint8_t ubPin, uint16_t usPwmDelayUs) {
+  uint8_t ubI = 0;
+  ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  for (; ubI < GAMMA_CONDENSED_MAX_VALUES; ubI++) {
+    softwarePwmAnalogWrite(ubPin, gammaCorrectedCondensed(ubI));
+    delayInternalMicroseconds(usPwmDelayUs, NULL);
+  }
+  for (ubI = GAMMA_CONDENSED_MAX_VALUES - 1; ubI > 0; ubI--) {
+    softwarePwmAnalogWrite(ubPin, gammaCorrectedCondensed(ubI));
+    delayInternalMicroseconds(usPwmDelayUs, NULL);
   }
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Sets the Arduino's clock to the compiled time of the program.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void setupTime(void) {
-  const char compileTime[] = __DATE__ " " __TIME__;
-  const char monthAbbreviations[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
-  char monthBuffer[16];
-  int nowHour, nowMinute, nowSecond, nowDay, nowYear = 0;
-  sscanf(compileTime, "%s %d %d %d:%d:%d", monthBuffer, &nowDay, &nowYear, &nowHour, &nowMinute, &nowSecond);
-  int nowMonth = (strstr(monthAbbreviations, monthBuffer) - monthAbbreviations) / 3 + 1;
-  setTime(nowHour, nowMinute, nowSecond, nowDay, nowMonth, nowYear);
+  const char szCompileTime[] = __DATE__ " " __TIME__;
+  const char szMonthAbbreviations[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
+  char szMonthBuffer[16];
+  int nNowHour, nNowMinute, nNowSecond, nNowDay, nNowYear = 0;
+  sscanf(szCompileTime, "%s %d %d %d:%d:%d", szMonthBuffer, &nNowDay, &nNowYear, &nNowHour, &nNowMinute, &nNowSecond);
+  int nNowMonth = (strstr(szMonthAbbreviations, szMonthBuffer) - szMonthAbbreviations) / 3 + 1;
+  setTime(nNowHour, nNowMinute, nNowSecond, nNowDay, nNowMonth, nNowYear);
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Writes whatever the Arduino's configured clock was set as to the serial console.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void setupPrintTime(void) {
-  char buffer[19];
-  sprintf(buffer, "%4d-%02d-%02d %02d:%02d:%02d", year(), month(), day(), hour(), minute(), second());
-  Serial.println(buffer);
+  char szBuffer[19];
+  sprintf(szBuffer, "%4d-%02d-%02d %02d:%02d:%02d", year(), month(), day(), hour(), minute(), second());
+
+  if (SERIAL_OUT) {
+    Serial.println(szBuffer);
+  }
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Seed by mixing analog noise and runtime for a higher degree of entropy.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void setupSeed(void) {
-  unsigned long seed = 0;
+  unsigned long ulSeed = 0;
 
-  for (uint8_t i = 0; i < 32; i++) {
-    for (uint8_t pin = A0; pin <= A5; pin++) {
-      seed ^= analogRead(pin) << (i % 16);
+  for (uint8_t ubI = 0; ubI < 32; ubI++) {
+    for (uint8_t ubPin = A0; ubPin <= A5; ubPin++) {
+      ulSeed ^= analogRead(ubPin) << (ubI % 16);
     }
-    seed ^= micros();
-    delay(5);
+    ulSeed ^= micros();
+    delayInternalMilliseconds(5, NULL);
   }
 
-  randomSeed(seed);
+  randomSeed(ulSeed);
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Prerequisite configuration for the check that decides if we enter cadence mode. Set an initial starting time.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void setupCadenceMode(void) {
-  if (cadenceModeLastConsideredTimeMs == 0) {
-    cadenceModeLastConsideredTimeMs = millis();
+  if (ulCadenceModeLastConsideredTimeMs == 0) {
+    ulCadenceModeLastConsideredTimeMs = millis();
   }
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Prerequisite configuration for the check that decides if we trigger an event while in cadence mode. Set an initial starting time.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void setupCadenceModeTrigger(void) {
-  if (cadenceModeLastTriggerTimeMs == 0) {
-    cadenceModeLastTriggerTimeMs = millis();
+  if (ulCadenceModeLastTriggerTimeMs == 0) {
+    ulCadenceModeLastTriggerTimeMs = millis();
   }
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Reset cadence mode checking for next cycle.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void resetCadenceMode(void) {
-  cadenceModeLastConsideredTimeMs = 0;
+  ulCadenceModeLastConsideredTimeMs = 0;
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Reset cadence mode trigger checking for next cycle.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void resetCadenceModeTrigger(void) {
-  cadenceModeLastTriggerTimeMs = 0;
+  ulCadenceModeLastTriggerTimeMs = 0;
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Considers if the current time should trigger the event within a minute of accuracy.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-uint8_t considerTriggerEvent(int nowHour, int considerHour, int nowMinute, int considerMinute) {
-  uint8_t triggerEvent = false;
+uint8_t considerTriggerEvent(int nNowHour, int nConsiderHour, int nNowMinute, int nConsiderMinute) {
+  uint8_t ubTriggerEvent = false;
 
-  if (nowHour >= considerHour && nowHour < considerHour + 1 && nowMinute >= considerMinute && nowMinute < considerMinute + 1) {
-    triggerEvent = true;
+  if (nNowHour >= nConsiderHour && nNowHour < nConsiderHour + 1 && nNowMinute >= nConsiderMinute && nNowMinute < nConsiderMinute + 1) {
+    ubTriggerEvent = true;
   }
 
-  return triggerEvent;
+  return ubTriggerEvent;
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Considers if the program is in test mode. This will trigger the event if the button is pressed, and engage cadence mode if
 // the button is pressed long enough.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 uint8_t considerTestMode(void) {
-  uint8_t performTest = false;
-  uint8_t reading = digitalRead(PIN_INPUT_BUTTON);
-  unsigned long currentMs = millis();
+  uint8_t ubPerformTest = false;
+  uint8_t ubReading = digitalRead(PIN_INPUT_BUTTON);
+  unsigned long ulCurrentMs = millis();
 
-  if (reading != buttonStateLast) {
-    debounceLastTimeMs = currentMs;
+  if (ubReading != ubButtonStateLast) {
+    ulDebounceLastTimeMs = ulCurrentMs;
   }
 
-  if ((currentMs - debounceLastTimeMs) > BUTTON_DEBOUNCE_DELAY_MS) {
-    if (reading == HIGH) {
-      performTest = true;
+  if ((ulCurrentMs - ulDebounceLastTimeMs) > BUTTON_DEBOUNCE_DELAY_MS) {
+    if (ubReading == HIGH) {
+      ubPerformTest = true;
     }
   }
 
-  buttonStateLast = reading;
+  ubButtonStateLast = ubReading;
 
-  return performTest;
+  return ubPerformTest;
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Considers if the program will enter cadence mode. If the button is pressed long enough, begin triggering the event at a longer prescribed interval.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 uint8_t considerCadenceMode(void) {
-  uint8_t considerCadenceMode = false;
-  unsigned long currentMs = millis();
+  uint8_t ubConsiderCadenceMode = false;
+  unsigned long ulCurrentMs = millis();
 
-  if ((currentMs - cadenceModeLastConsideredTimeMs) >= BUTTON_ENTER_CADENCE_MODE_DELAY_SECONDS * 1000) {
+  if ((ulCurrentMs - ulCadenceModeLastConsideredTimeMs) >= BUTTON_ENTER_CADENCE_MODE_DELAY_SECONDS * 1000) {
     setupCadenceModeTrigger();
-    considerCadenceMode = true;
+    ubConsiderCadenceMode = true;
   }
 
-  return considerCadenceMode;
+  return ubConsiderCadenceMode;
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Considers if the program will trigger a cadence mode event. This is the longer prescribed interval.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 uint8_t considerCadenceModeTrigger(void) {
-  uint8_t performCadenceModeTrigger = false;
-  unsigned long currentMs = millis();
+  uint8_t ubCerformCadenceModeTrigger = false;
+  unsigned long ulCurrentMs = millis();
 
-  if ((currentMs - cadenceModeLastTriggerTimeMs) >= CADENCE_MODE_CYCLIC_INTERVAL_SECONDS * 1000) {
-    cadenceModeLastTriggerTimeMs = currentMs;
-    performCadenceModeTrigger = true;
+  if ((ulCurrentMs - ulCadenceModeLastTriggerTimeMs) >= CADENCE_MODE_CYCLIC_INTERVAL_SECONDS * 1000) {
+    ulCadenceModeLastTriggerTimeMs = ulCurrentMs;
+    ubCerformCadenceModeTrigger = true;
   }
 
-  return performCadenceModeTrigger;
+  return ubCerformCadenceModeTrigger;
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Triggers the event.
@@ -310,19 +348,68 @@ uint8_t considerCadenceModeTrigger(void) {
 // Total time @ 1: 6.5 seconds.
 // Total time @ 3: 19.5 seconds.
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-void triggerEvent(uint8_t cycleCount) {
-  for (uint8_t i = 0; i < cycleCount; i++) {
-    digitalWrite(PIN_OUTPUT_LED_RED, HIGH);
+void triggerEvent(uint8_t ubCycleCount) {
+  for (uint8_t ubI = 0; ubI < ubCycleCount; ubI++) {
+    softwarePwmAnalogWrite(PIN_OUTPUT_LED_RED, gammaCorrectedCondensed(GAMMA_CONDENSED_MAX_VALUES - 1));
 
     // Full -> taper
     analogWrite(PIN_OUTPUT_TIP41_BASE, 255);
-    delay(500);
+    delayInternalMilliseconds(500, NULL);
     analogWrite(PIN_OUTPUT_TIP41_BASE, 75);
-    delay(5000);
+    delayInternalMilliseconds(5000, NULL);
     analogWrite(PIN_OUTPUT_TIP41_BASE, 0);
 
-    digitalWrite(PIN_OUTPUT_LED_RED, LOW);
-    delay(1000);
+    softwarePwmAnalogWrite(PIN_OUTPUT_LED_RED, 0);
+    delayInternalSeconds(1, NULL);
+  }
+}
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Internal second delay handler to check on tasks while waiting.
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void delayInternalSeconds(uint16_t usDelaySeconds, void (*p_fnInterruptHandler)(void)) {
+  unsigned long ulMillisStart = millis();
+  unsigned long usDelayMs = usDelaySeconds * 1000;
+
+  if (p_fnInterruptHandler) {
+    while ((millis() - ulMillisStart) < usDelayMs) {
+      p_fnInterruptHandler();
+    }
+  } else {
+    while ((millis() - ulMillisStart) < usDelayMs) {
+      ;
+    }
+  }
+}
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Internal millisecond delay handler to check on tasks while waiting.
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void delayInternalMilliseconds(uint16_t usDelayMs, void (*p_fnInterruptHandler)(void)) {
+  unsigned long ulMillisStart = millis();
+
+  if (p_fnInterruptHandler) {
+    while ((millis() - ulMillisStart) < usDelayMs) {
+      p_fnInterruptHandler();
+    }
+  } else {
+    while ((millis() - ulMillisStart) < usDelayMs) {
+      ;
+    }
+  }
+}
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Internal microsecond delay handler to check on tasks while waiting.
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void delayInternalMicroseconds(uint16_t usDelayUs, void (*p_fnInterruptHandler)(void)) {
+  unsigned long ulMicrosStart = micros();
+
+  if (p_fnInterruptHandler) {
+    while ((micros() - ulMicrosStart) < usDelayUs) {
+      p_fnInterruptHandler();
+    }
+  } else {
+    while ((micros() - ulMicrosStart) < usDelayUs) {
+      ;
+    }
   }
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -9,6 +9,11 @@ An automated event executor that triggers actions based on pre-defined times and
 
 ![Rev 1](<Schematics/Rev 1.png>)
 
+## 🔹 V1.1.0 Firmware For Rev 1 Schematic
+
+- Pulsing LED's with software PWM + gamma correction.
+- Review.
+
 ## 🔹 V1.0.0 Firmware For Rev 1 Schematic
 
 - Initial release.
